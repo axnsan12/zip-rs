@@ -978,8 +978,9 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
                     ))
                 }
                 #[cfg(feature = "zstd")]
-                CompressionMethod::Zstd => GenericZipWriter::Zstd(
-                    ZstdEncoder::new(
+                CompressionMethod::Zstd => {
+                    #[allow(unused_mut)]
+                    let mut encoder = ZstdEncoder::new(
                         bare,
                         clamp_opt(
                             compression_level.unwrap_or(zstd::DEFAULT_COMPRESSION_LEVEL),
@@ -989,8 +990,20 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
                             "Unsupported compression level",
                         ))?,
                     )
-                    .unwrap(),
-                ),
+                    .unwrap();
+
+                    #[cfg(feature = "zstdmt")]
+                    {
+                        use std::num::NonZeroUsize;
+
+                        let n_workers = std::thread::available_parallelism()
+                            .map(NonZeroUsize::get)
+                            .unwrap_or(1) as u32;
+                        encoder.multithread(n_workers).unwrap();
+                    }
+
+                    GenericZipWriter::Zstd(encoder)
+                }
                 CompressionMethod::Unsupported(..) => {
                     return Err(ZipError::UnsupportedArchive("Unsupported compression"))
                 }
